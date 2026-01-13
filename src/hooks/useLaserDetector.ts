@@ -324,80 +324,87 @@ export function useLaserDetector() {
     return { x: avgX, y: avgY };
   }, []);
 
-  const processFrame = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-    if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) {
-      animationRef.current = requestAnimationFrame(processFrame);
-      return;
-    }
-
-    // Update canvas size to match video
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-    }
-
-    // Apply transformations
-    ctx.save();
-    if (settings.mirror) {
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-    }
-    ctx.drawImage(video, 0, 0);
-    ctx.restore();
-
-    // Detect laser
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let detection = detectLaser(imageData, settings);
-
-    // Apply smoothing
-    if (detection.found && settings.smoothing > 0) {
-      const smoothed = smoothPosition(detection.x, detection.y, settings.smoothing);
-      detection = { ...detection, x: smoothed.x, y: smoothed.y };
-    } else if (!detection.found) {
-      positionHistoryRef.current = [];
-    }
-
-    // Calculate FPS
-    const now = performance.now();
-    if (lastFrameTimeRef.current) {
-      const fps = 1000 / (now - lastFrameTimeRef.current);
-      fpsHistoryRef.current.push(fps);
-      if (fpsHistoryRef.current.length > 30) {
-        fpsHistoryRef.current.shift();
-      }
-      const avgFps = Math.round(
-        fpsHistoryRef.current.reduce((a, b) => a + b, 0) / fpsHistoryRef.current.length
-      );
-      setState(s => ({ ...s, fps: avgFps, detection }));
-    } else {
-      setState(s => ({ ...s, detection }));
-    }
-    lastFrameTimeRef.current = now;
-
-    animationRef.current = requestAnimationFrame(processFrame);
-  }, [state.cameraActive, settings, detectLaser, smoothPosition]);
-
   // Start processing loop when camera becomes active
   useEffect(() => {
-    if (state.cameraActive && !state.calibrating) {
-      // Small delay to ensure video is ready
-      const timeoutId = setTimeout(() => {
-        animationRef.current = requestAnimationFrame(processFrame);
-      }, 100);
-      return () => {
-        clearTimeout(timeoutId);
-        if (animationRef.current) {
-          cancelAnimationFrame(animationRef.current);
+    if (!state.cameraActive || state.calibrating) return;
+
+    let frameId: number;
+    let lastTime = 0;
+
+    const processFrame = () => {
+      if (!videoRef.current || !canvasRef.current) {
+        frameId = requestAnimationFrame(processFrame);
+        return;
+      }
+
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+      if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        frameId = requestAnimationFrame(processFrame);
+        return;
+      }
+
+      // Update canvas size to match video
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
+      // Apply transformations
+      ctx.save();
+      if (settings.mirror) {
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, 0, 0);
+      ctx.restore();
+
+      // Detect laser
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let detection = detectLaser(imageData, settings);
+
+      // Apply smoothing
+      if (detection.found && settings.smoothing > 0) {
+        const smoothed = smoothPosition(detection.x, detection.y, settings.smoothing);
+        detection = { ...detection, x: smoothed.x, y: smoothed.y };
+      } else if (!detection.found) {
+        positionHistoryRef.current = [];
+      }
+
+      // Calculate FPS
+      const now = performance.now();
+      if (lastTime) {
+        const fps = 1000 / (now - lastTime);
+        fpsHistoryRef.current.push(fps);
+        if (fpsHistoryRef.current.length > 30) {
+          fpsHistoryRef.current.shift();
         }
-      };
-    }
-  }, [state.cameraActive, state.calibrating, processFrame]);
+        const avgFps = Math.round(
+          fpsHistoryRef.current.reduce((a, b) => a + b, 0) / fpsHistoryRef.current.length
+        );
+        setState(s => ({ ...s, fps: avgFps, detection }));
+      } else {
+        setState(s => ({ ...s, detection }));
+      }
+      lastTime = now;
+
+      frameId = requestAnimationFrame(processFrame);
+    };
+
+    // Small delay to ensure video stream is ready
+    const timeoutId = setTimeout(() => {
+      frameId = requestAnimationFrame(processFrame);
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (frameId) {
+        cancelAnimationFrame(frameId);
+      }
+    };
+  }, [state.cameraActive, state.calibrating, settings, detectLaser, smoothPosition]);
 
   useEffect(() => {
     return () => {
