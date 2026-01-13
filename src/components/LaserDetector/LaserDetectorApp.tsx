@@ -76,16 +76,18 @@ export function LaserDetectorApp() {
 
       {/* Main camera view */}
       <main className="flex-1 relative overflow-hidden">
-        {state.cameraActive ? (
-          <CameraView
-            videoRef={videoRef}
-            canvasRef={canvasRef}
-            detection={state.detection}
-            settings={settings}
-            cameraActive={state.cameraActive}
-          />
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+        {/* Keep CameraView mounted so refs exist before camera start */}
+        <CameraView
+          videoRef={videoRef}
+          canvasRef={canvasRef}
+          detection={state.detection}
+          settings={settings}
+          cameraActive={state.cameraActive}
+        />
+
+        {/* Intro overlay (shown when camera is not active) */}
+        {!state.cameraActive && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-background">
             <div className="w-24 h-24 mb-6 rounded-full bg-secondary flex items-center justify-center">
               <Camera className="w-12 h-12 text-primary" />
             </div>
@@ -95,7 +97,7 @@ export function LaserDetectorApp() {
             <p className="text-muted-foreground mb-8 max-w-sm">
               Виявляє лазерну лінію та показує центр променя. Замінює окремий приймач лазерного рівня.
             </p>
-            
+
             <Button
               onClick={startCamera}
               size="lg"
@@ -116,7 +118,7 @@ export function LaserDetectorApp() {
                 🔒 Приватність
               </h3>
               <p className="text-xs text-muted-foreground">
-                Усі дані обробляються локально на вашому пристрої. 
+                Усі дані обробляються локально на вашому пристрої.
                 Жодна інформація не відправляється на сервер.
               </p>
             </div>
